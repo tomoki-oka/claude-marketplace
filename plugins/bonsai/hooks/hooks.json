@@ -1,0 +1,4 @@
+{
+  "description": "Opens the bonsai pane at session.start, draws it as a Raster on ui.render{component=Pane}, grows it on a clock.every tick with ui.blit, and hangs an ornament per turn.complete; /bonsai toggles, /bonsai speed N sets minutes to full growth",
+  "modules": ["./register.ts"]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "toka-lab",
+  "description": "tomoki-oka の Claude Code プラグインを配布する公開マーケットプレイス",
+  "owner": { "name": "tomoki-oka", "url": "https://github.com/tomoki-oka" },
+  "plugins": [
+    {
+      "name": "bonsai",
+      "description": "右ドックで育つピクセルアートの盆栽。セッションごとに 1 鉢、開いている時間で育ち、剪定・種の収穫と交配・棚・実績付き",
+      "source": "./plugins/bonsai"
+    }
+  ]
+}

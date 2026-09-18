@@ -1,0 +1,6 @@
+{
+  "name": "bonsai",
+  "version": "0.1.0",
+  "description": "A pixel-art bonsai in a docked pane that grows with the session's elapsed time. The species and the shape come from the session; each answer adds an ornament.",
+  "author": { "name": "tomoki-oka" }
+}
