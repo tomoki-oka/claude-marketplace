@@ -2,8 +2,6 @@
 
 tomoki-oka の Claude Code プラグインを配布するマーケットプレイスです。
 
-<p align="center"><img src="docs/bonsai.png" alt="右ドックで満開になった桜の盆栽" width="420"></p>
-
 ## 入れ方
 
 ```

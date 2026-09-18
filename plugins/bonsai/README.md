@@ -1,5 +1,7 @@
 # bonsai
 
+<p align="center"><img src="docs/bonsai.png" alt="右ドックで満開になった桜の盆栽" width="420"></p>
+
 Claude Code の右ドックにピクセルアートの盆栽を出す Mod です。セッションごとに 1 鉢。開いている時間で育ち、答えが返るたびに飾りが増え、満開のあとは季節が巡ります。
 
 ## 入れ方
