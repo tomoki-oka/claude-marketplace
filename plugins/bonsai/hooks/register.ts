@@ -16,6 +16,7 @@ const SAVE_EVERY_TICKS = 40
 const DEFAULT_FULL_MINUTES = 480
 const STORE_MINUTES = 'fullMinutes'
 const STORE_CLOCK = 'clock'
+const STORE_HUD = 'hud'
 const STORE_BAG = 'seedbag'
 const STORE_STATS = 'stats'
 const SUN_DECAY_PER_MS = 1 / (60 * 60_000)
@@ -41,6 +42,7 @@ const HELP = [
   '/bonsai bag add <種>     もらった種を袋に入れる',
   '/bonsai badges           実績の Pane を出す・片付ける',
   '/bonsai shelf            盆栽棚を出す・片付ける。育てた木を小さく並べる',
+  '/bonsai hud              状態行とボタンを消して木だけにする。もう一度で戻す（全セッション共通）',
   '/bonsai help             この説明',
   '',
   '盆栽はセッション単位。最初の /bonsai から、開いている時間だけ育つ。resume で続きから。',
@@ -87,6 +89,7 @@ const BADGES: readonly { id: string; name: string; test: (s: Stats) => boolean }
   { id: 'shiki', name: '四季', test: s => s.years >= 1 },
   { id: 'juujikan', name: '十時間', test: s => s.totalMs >= 10 * 60 * 60_000 },
   { id: 'hyakujikan', name: '百時間', test: s => s.totalMs >= 100 * 60 * 60_000 },
+  { id: 'senjikan', name: '千時間', test: s => s.totalMs >= 1000 * 60 * 60_000 },
 ]
 
 const hoursMinutesOf = (ms: number) => `${Math.floor(ms / 3_600_000)} 時間 ${Math.floor((ms % 3_600_000) / 60_000)} 分`
@@ -128,6 +131,7 @@ export function register(on: On) {
   let isOpen = false
   let isShelfOpen = false
   let isInfoOpen = false
+  let isHud = true
   let isBagOpen = false
   let isLoaded = false
   let size = { columns: 0, rows: 0 }
@@ -202,6 +206,8 @@ export function register(on: On) {
     isLoaded = true
     repoName = (await $.session.repo())?.root.split('/').filter(Boolean).pop() ?? ''
     const storedClock = await $.store.get(STORE_CLOCK)
+    const storedHud = await $.store.get(STORE_HUD)
+    if (typeof storedHud === 'boolean') isHud = storedHud
     const storedStats = await $.store.get(STORE_STATS)
     if (isStats(storedStats)) stats = { ...EMPTY_STATS, ...storedStats }
     if (isClock(storedClock)) clock = storedClock
@@ -428,6 +434,11 @@ export function register(on: On) {
         await $.ui.open({ id: SHELF_ID, title: '盆栽棚' }); isShelfOpen = true
         return { text: `棚に ${rows.length} 鉢` }
       }
+      case 'hud': {
+        isHud = !isHud
+        await $.store.set(STORE_HUD, isHud); redraw()
+        return { text: isHud ? '状態行とボタンを出した' : '木だけにした。/bonsai hud で戻る' }
+      }
       case 'reset': {
         elapsedMs = 0; bonusMs = 0; ornaments = []; cuts = []; wounds = 0; sprouts = 0; spirits = []
         await saveState($, storeKey, snapshot()); redraw()
@@ -523,16 +534,18 @@ export function register(on: On) {
     if (e.requestId !== PANE_ID || e.surface !== 'terminal') return next(e)
     const { Box, Text, Raster, Button } = await $.ui.resolve(e)
     if (!isLoaded) return Box({ children: [Text({ dimColor: true, children: '…' })] })
-    size = { columns: Math.max(1, e.props.bodyColumns - 2), rows: Math.max(1, e.props.scroll.bodyRows - 2) }
+    size = { columns: Math.max(1, e.props.bodyColumns - 2), rows: Math.max(1, e.props.scroll.bodyRows - (isHud ? 3 : 0)) }
     const scene = sceneOf(await $.clock.now())
     const elapsedMin = Math.floor(elapsedMs / 60_000)
     const rest = wiltOf(vitals) > 0 ? ' · 葉が黄ばんできた。休憩どき' : ''
     const label = name ?? repoName
     const status = `${label ? `${label} · ` : ''}${species.name} · 日照${Math.round(sun * 100)}% · ${stageOf(scene.g, scene.season)} ${Math.round(scene.g * 100)}% · ${elapsedMin}分 · 満開まで${fullMinutes}分 · 飾り${ornaments.length}${cuts.length ? ` · 剪定${cuts.length}` : ''}${sprouts ? ` · 芽${sprouts}` : ''}${spirits.length ? ` · ${spirits.join('と')}` : ''}${isSacred(scene) ? ' · 神木' : isElder(scene) ? ' · 古木' : ''}${clock.mode === 'fast' ? ` · ${Math.floor(scene.hour)}時` : ''}${rest}`
+    const raster = Raster({ key: RASTER_KEY, columns: size.columns, rows: size.rows, cells: drawScene(scene, size.columns, size.rows) })
+    if (!isHud) return Box({ flexDirection: 'column', paddingLeft: 1, children: [raster] })
     return Box({
       flexDirection: 'column', paddingLeft: 1,
       children: [
-        Raster({ key: RASTER_KEY, columns: size.columns, rows: size.rows, cells: drawScene(scene, size.columns, size.rows) }),
+        raster,
         Text({ dimColor: true, wrap: 'truncate', children: status }),
         Box({
           flexDirection: 'row', gap: 1,

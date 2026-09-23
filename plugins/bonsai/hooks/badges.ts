@@ -17,6 +17,7 @@ export const BADGE_ART: Record<string, BadgeArt> = {
   shiki: { palette: G, rows: ['ppp.ooo', 'ppp.ooo', 'ppp.ooo', '.......', 'ggg.www', 'ggg.www', 'ggg.www'] },
   juujikan: { palette: G, rows: ['.yyyyy.', 'y..w..y', 'y..w..y', 'y..ww.y', 'y.....y', 'y.....y', '.yyyyy.'] },
   hyakujikan: { palette: G, rows: ['yyyyyyy', '.ywwwy.', '..ywy..', '...y...', '..y.y..', '.y.w.y.', 'yyyyyyy'] },
+  senjikan: { palette: G, rows: ['..yyy..', '.y.w.y.', 'y.www.y', 'y.wyw.y', 'y.www.y', '.y.w.y.', '..yyy..'] },
 }
 
 const LOCKED = 0x55585e
