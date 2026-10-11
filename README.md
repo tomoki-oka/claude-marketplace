@@ -16,6 +16,7 @@ Claude Code の中なら `/plugin marketplace add tomoki-oka/claude-marketplace`
 | 名前 | 何か | 前提 |
 |---|---|---|
 | [bonsai](plugins/bonsai) | 右ドックで育つピクセルアートの盆栽。セッションごとに 1 鉢 | Claude Code 2.1.274 以降。`~/.claude/settings.json` の `env` に `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` |
+| [session-now](plugins/session-now) | このセッションの目的・流れ・判断待ち・タスクを右パネルに出し続ける | 同上 |
 
 ## 更新
 

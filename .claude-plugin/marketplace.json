@@ -7,6 +7,11 @@
       "name": "bonsai",
       "description": "右ドックで育つピクセルアートの盆栽。セッションごとに 1 鉢、開いている時間で育ち、剪定・種の収穫と交配・棚・実績付き",
       "source": "./plugins/bonsai"
+    },
+    {
+      "name": "session-now",
+      "source": "./plugins/session-now",
+      "description": "このセッションの目的・流れ・判断待ち・タスクを右パネルに出し続ける"
     }
   ]
 }

@@ -1,0 +1,21 @@
+{
+  "name": "session-now",
+  "version": "0.1.0",
+  "description": "このセッションの目的・流れ・判断待ち・タスクを右パネルに出し続ける",
+  "types": "./types/index.d.ts",
+  "author": { "name": "tomoki-oka" },
+  "userConfig": {
+    "jiraUrl": {
+      "type": "string",
+      "title": "Jira の URL",
+      "description": "Jira サイトの URL（例 https://example.atlassian.net）。文中の Jira キー（ABC-123）をそのサイトの課題へのリンクにする。空ならリンクにしない",
+      "default": ""
+    },
+    "previewHostPattern": {
+      "type": "string",
+      "title": "preview 環境のホスト名の正規表現",
+      "description": "PR ごとの preview 環境のホスト名に当てる正規表現。最初のキャプチャグループを PR 番号として表示する（例 ^pr-(\\d+)\\.preview\\.example\\.com$）。空なら preview として扱わない",
+      "default": ""
+    }
+  }
+}
