@@ -1,22 +1,33 @@
-import type { NowDecision, NowStep, NowSummary, NowTask } from '../types'
+import { URL_RE } from './links'
+import type { SessionMessage } from 'claude-code'
+import type { DecisionDetail, NowDecision, NowStep, NowSummary, NowTask, StepDetail } from '../types'
 
 // ponytail: 1 日の上限は固定値。足りなければ userConfig に出す
 export const DAILY_MAX_CALLS = 150
 
 const PROMPT_LIMIT = 1500
 const ANSWER_LIMIT = 3500
+const LOG_LIMIT = 6000
+const TOPIC_LIMIT = 800
 
 export const SYSTEM = `あなたは開発セッションの状況メモを更新する係です。
-入力は「前回のメモ」「タスク一覧」「今回のユーザーの指示」「今回のアシスタントの最終回答」です。
+入力は「前回のメモ」「タスク一覧」「今回のユーザーの指示」「今回のターンの経過」「今回のアシスタントの最終回答」です。経過には、アシスタントがターンの途中で話したことと、呼び出したツール（ツール名と入力の要点）が順に入っています。
 前回のメモを今回の内容で更新し、JSON だけを返してください。前置きやコードフェンスは付けません。
 
-{"purpose":"なぜこの作業をしているか","goal":"何ができたら終わりか","flow":[{"text":"段階","done":true,"detail":"その段階で何をしたか・何が残っているか"}],"decisions":[{"text":"ユーザーが決める必要のあること","detail":"何を決めるのか・出ている選択肢・アシスタントの推奨"}],"next":"次にやること"}
+{"purpose":"なぜこの作業をしているか","goal":"何ができたら終わりか","flow":[{"text":"段階","done":true,"detail":{"did":["やったこと"],"why":"なぜこの段階が要るか","now":"今どうなっているか","left":"残っていること"}}],"decisions":[{"text":"ユーザーが決める必要のあること","detail":{"ask":"何を決めるのか","options":[{"name":"選択肢の名前","result":"それを選ぶと何が起きるか"}],"recommend":"アシスタントの推奨とその理由"}}],"next":"次にやること"}
 
 規則:
-- 日本語で、各項目は 1 文、60 文字以内。flow の detail だけは 2 文、120 文字以内で、何をしたか（終わった段階）か何が残っているか（終わっていない段階）を書く。ファイル名・PR 番号・コマンドが会話に出ていれば含める
-- 会話に出ていない目的・数字・事情を足さない。分からない項目は空文字にする
+- 日本語で書く。text は各項目 1 文、60 文字以内
+- flow の detail.did: その段階でやったことを 1〜4 個。各 60 文字以内。触ったファイル・関数・コマンド・数値が経過や会話に出ていれば入れる。まだ何もしていない段階は []
+- flow の detail.why: なぜその段階が要るか。1〜2 文、100 文字以内
+- flow の detail.now: 今どうなっているか（終わった・途中・止まっている理由）。1〜2 文、100 文字以内
+- flow の detail.left: 残っていること。無ければ空文字
+- decisions の detail.ask: 何を決めるのか。1〜2 文
+- decisions の detail.options: 会話に出ている選択肢 2〜4 個。name は選択肢の短い名前、result はそれを選ぶと何が起きるか（1 文、80 文字以内）
+- decisions の detail.recommend: アシスタントの推奨とその理由。無ければ空文字
+- detail のどの欄も text の言い換えにしない。分からない欄は空文字か []
+- 会話と経過に出ていない目的・数字・事情を足さない。分からない項目は空文字にする
 - decisions には、アシスタントがユーザーに確認・選択を求めていて、まだ答えが出ていないものだけを書く。無ければ []
-- decisions の detail は 3 文、180 文字以内で、何を決めるのか、会話に出ている選択肢とそれぞれどうなるか、アシスタントの推奨（あれば）を書く
 - flow は 6 段階以内。終わった段階は done: true
 - 話題が変わったら、前回のメモを捨てて新しい作業として書き直す
 
@@ -38,7 +49,13 @@ function clip(text: string, limit: number): string {
   return `${text.slice(0, half)}\n…（中略）…\n${text.slice(-half)}`
 }
 
-export function buildPrompt(prev: NowSummary | null, tasks: readonly NowTask[], prompt: string, answer: string): string {
+export function buildPrompt(
+  prev: NowSummary | null,
+  tasks: readonly NowTask[],
+  prompt: string,
+  log: string,
+  answer: string,
+): string {
   const memo = prev
     ? JSON.stringify({ purpose: prev.purpose, goal: prev.goal, flow: prev.flow, decisions: prev.decisions, next: prev.next })
     : '（なし）'
@@ -47,8 +64,78 @@ export function buildPrompt(prev: NowSummary | null, tasks: readonly NowTask[], 
     `# 前回のメモ\n${memo}`,
     `# タスク一覧\n${list}`,
     `# 今回のユーザーの指示\n${clip(prompt, PROMPT_LIMIT) || '（なし）'}`,
+    `# 今回のターンの経過\n${clip(log, LOG_LIMIT) || '（なし）'}`,
     `# 今回のアシスタントの最終回答\n${clip(answer, ANSWER_LIMIT)}`,
   ].join('\n\n')
+}
+
+const SHOWN_INPUTS = ['description', 'file_path', 'command', 'pattern', 'prompt'] as const
+
+const oneLine = (text: string, limit: number) => {
+  const t = text.replace(/\s+/g, ' ').trim()
+  return t.length <= limit ? t : `${t.slice(0, limit)}…`
+}
+
+// 最後の人の発言より後の、アシスタントの途中の発言とツール呼び出しを 1 行ずつにする。最後の発言（ツール呼び出しを伴わない最終回答）は別に渡すので入れない
+export function turnLog(messages: readonly SessionMessage[]): string {
+  const isHuman = (m: SessionMessage) => m.role === 'user' && m.text.trim() !== '' && !m.toolResults?.length
+  const from = messages.findLastIndex(isHuman) + 1
+  const turn = messages.slice(from)
+  const finalIndex = turn.findLastIndex(m => m.role === 'assistant')
+  const lines: string[] = []
+  turn.forEach((m, i) => {
+    if (m.role !== 'assistant') return
+    const isFinal = i === finalIndex && m.toolUses.length === 0
+    if (m.text.trim() && !isFinal) lines.push(`[発言] ${oneLine(m.text, 600)}`)
+    for (const u of m.toolUses) {
+      const parts = SHOWN_INPUTS.flatMap(k => (typeof u.input[k] === 'string' ? [`${k}=${oneLine(u.input[k], 120)}`] : []))
+      lines.push(`[${u.tool}]${u.isError ? '（エラー）' : ''} ${parts.join(' ')}`.trimEnd())
+    }
+  })
+  return lines.join('\n')
+}
+
+export type Section = { label: string; lines: string[]; isList: boolean }
+
+function section(label: string, lines: string[], isList = false): Section[] {
+  const kept = lines.filter(Boolean)
+  return kept.length ? [{ label, lines: kept, isList }] : []
+}
+
+// 詳細欄の欄。空の欄は入れない。保存済みの古い形（detail が文字列）は欄なしになる
+export function stepSections(d: StepDetail): Section[] {
+  return [...section('やったこと', d?.did ?? [], true), ...section('理由', [d?.why]), ...section('今', [d?.now]), ...section('残り', [d?.left])]
+}
+
+export function decisionSections(d: DecisionDetail): Section[] {
+  const options = (d?.options ?? []).map(o => (o.result ? `${o.name}: ${o.result}` : o.name))
+  return [...section('決めること', [d?.ask]), ...section('選択肢', options, true), ...section('推奨', [d?.recommend])]
+}
+
+const displayWidth = (text: string) => [...text].reduce((n, c) => n + (c.charCodeAt(0) < 128 ? 1 : 2), 0)
+
+// 横並びの見出しの幅。一番長い見出しに余白 2 を足す
+export const labelWidth = (sections: Section[]) =>
+  Math.max(0, ...sections.filter(x => !x.isList).map(x => displayWidth(x.label))) + 2
+
+export const taskSections = (description: string): Section[] => section('', [description || '説明なし'])
+
+export const sectionsText = (sections: Section[]) => sections.map(x => (x.label ? `${x.label}: ` : '') + x.lines.join(' / ')).join(' ')
+
+// eli5 に渡す題材。開いている項目があればその題名と本文、無ければセッションの目的・ゴール・今の段階
+export function eli5Topic(
+  picked: { title: string; sections: Section[] } | undefined,
+  s: NowSummary | null,
+): string {
+  if (picked) return oneLine(`${picked.title}: ${sectionsText(picked.sections)}`, TOPIC_LIMIT)
+  if (!s) return ''
+  const step = s.flow.find(f => !f.done)
+  const parts = [
+    s.purpose && `目的: ${s.purpose}`,
+    s.goal && `ゴール: ${s.goal}`,
+    step && `今の段階: ${step.text}${step.detail?.now ? ` ${step.detail.now}` : ''}`,
+  ]
+  return oneLine(parts.filter(Boolean).join(' '), TOPIC_LIMIT)
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
@@ -63,13 +150,23 @@ export function parseSummary(text: string, at: number): NowSummary | null {
   } catch {
     return null
   }
+  const obj = (v: unknown) => (v && typeof v === 'object' ? (v as Record<string, unknown>) : {})
+  const strs = (v: unknown) => (Array.isArray(v) ? v.map(str).filter(Boolean) : [])
+  const stepDetail = (v: unknown): StepDetail => {
+    const d = obj(v)
+    return { did: strs(d.did), why: str(d.why), now: str(d.now), left: str(d.left) }
+  }
+  const decisionDetail = (v: unknown): DecisionDetail => {
+    const d = obj(v)
+    const options = Array.isArray(d.options)
+      ? d.options.map(obj).map(o => ({ name: str(o.name), result: str(o.result) })).filter(o => o.name)
+      : []
+    return { ask: str(d.ask), options, recommend: str(d.recommend) }
+  }
   const flow: NowStep[] = Array.isArray(raw.flow)
     ? raw.flow
-        .map(s => ({
-          text: str((s as NowStep)?.text),
-          done: (s as NowStep)?.done === true,
-          detail: str((s as NowStep)?.detail),
-        }))
+        .map(obj)
+        .map(s => ({ text: str(s.text), done: s.done === true, detail: stepDetail(s.detail) }))
         .filter(s => s.text)
     : []
   // 以前の形（文字列の配列）で保存された要約も読めるようにする
@@ -77,8 +174,8 @@ export function parseSummary(text: string, at: number): NowSummary | null {
     ? raw.decisions
         .map(d =>
           typeof d === 'string'
-            ? { text: d.trim(), detail: '' }
-            : { text: str((d as NowDecision)?.text), detail: str((d as NowDecision)?.detail) },
+            ? { text: d.trim(), detail: decisionDetail(null) }
+            : { text: str(obj(d).text), detail: decisionDetail(obj(d).detail) },
         )
         .filter(d => d.text)
     : []
@@ -137,19 +234,26 @@ export function today(now: Date): string {
 
 // Jira のキーと同じ形をした規格名。リンクにしない
 const NOT_JIRA = new Set(['UTF', 'ISO', 'SHA', 'RFC', 'CVE', 'ES'])
-const REF_RE = /#(\d+)\b|\b([A-Z][A-Z0-9]{1,9})-(\d+)\b/g
+const REF_RE = /#(\d+)\b|(?<![\w-])([A-Z][A-Z0-9]{1,9})-([1-9]\d*)\b/g
+
+// Jira のキーなら課題の URL、規格名・jiraUrl が空・jiraProjects にないプロジェクトなら空文字。jiraProjects はカンマ区切りで、空なら絞らない
+function jiraHref(jiraUrl: string, jiraProjects: string, project: string | undefined, num: string | undefined): string {
+  const base = jiraUrl.replace(/\/+$/, '')
+  const allowed = jiraProjects.split(',').map(p => p.trim()).filter(Boolean)
+  if (!base || !project || NOT_JIRA.has(project)) return ''
+  return allowed.length === 0 || allowed.includes(project) ? `${base}/browse/${project}-${num}` : ''
+}
 
 export type Segment = { text: string; href?: string }
 
 // 文中の PR 番号（#1234）と Jira のキー（ABC-123）をリンクの区間に分ける。repoUrl が空なら PR 番号、jiraUrl が空なら Jira のキーはそのまま
-export function linkify(text: string, repoUrl: string, jiraUrl = ''): Segment[] {
-  const jiraBase = jiraUrl.replace(/\/+$/, '')
+export function linkify(text: string, repoUrl: string, jiraUrl = '', jiraProjects = ''): Segment[] {
   const out: Segment[] = []
   let last = 0
   for (const m of text.matchAll(REF_RE)) {
     const href = m[1]
       ? repoUrl && `${repoUrl}/pull/${m[1]}`
-      : jiraBase && !NOT_JIRA.has(m[2] ?? '') && `${jiraBase}/browse/${m[2]}-${m[3]}`
+      : jiraHref(jiraUrl, jiraProjects, m[2], m[3])
     if (!href) continue
     if (m.index > last) out.push({ text: text.slice(last, m.index) })
     out.push({ text: m[0], href })
@@ -157,4 +261,10 @@ export function linkify(text: string, repoUrl: string, jiraUrl = ''): Segment[] 
   }
   if (last < text.length) out.push({ text: text.slice(last) })
   return out
+}
+
+// 本文の Jira キーを課題の URL にする。URL の中のキー（ブランチ名など）は拾わず、同じキーは 1 回だけ出た順
+export function extractJiraLinks(text: string, jiraUrl: string, jiraProjects = ''): string[] {
+  const hrefs = [...text.replace(URL_RE, ' ').matchAll(REF_RE)].map(m => jiraHref(jiraUrl, jiraProjects, m[2], m[3]))
+  return [...new Set(hrefs.filter(Boolean))]
 }

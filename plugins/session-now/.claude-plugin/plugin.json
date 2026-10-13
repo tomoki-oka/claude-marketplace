@@ -11,6 +11,12 @@
       "description": "Jira サイトの URL（例 https://example.atlassian.net）。文中の Jira キー（ABC-123）をそのサイトの課題へのリンクにする。空ならリンクにしない",
       "default": ""
     },
+    "jiraProjects": {
+      "type": "string",
+      "title": "Jira のプロジェクト",
+      "description": "リンクにする Jira のプロジェクトキーをカンマ区切りで（例 ABC,XYZ）。空ならすべてのキーをリンクにする",
+      "default": ""
+    },
     "previewHostPattern": {
       "type": "string",
       "title": "preview 環境のホスト名の正規表現",

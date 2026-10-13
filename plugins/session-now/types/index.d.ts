@@ -4,8 +4,10 @@ export type NowTask = {
   description: string
   status: 'pending' | 'in_progress' | 'completed'
 }
-export type NowStep = { text: string; done: boolean; detail: string }
-export type NowDecision = { text: string; detail: string }
+export type StepDetail = { did: string[]; why: string; now: string; left: string }
+export type DecisionDetail = { ask: string; options: { name: string; result: string }[]; recommend: string }
+export type NowStep = { text: string; done: boolean; detail: StepDetail }
+export type NowDecision = { text: string; detail: DecisionDetail }
 export type NowSummary = {
   purpose: string
   goal: string

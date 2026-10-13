@@ -9,6 +9,7 @@ Claude Code の右パネルに、このセッションの状況を出し続け�
 - 要約は Haiku が毎ターン更新する。呼び出しは 1 日 150 回まで
 
 「変更の図解を HTML で開く」ボタンは、`explain-change` という名前のスキルかコマンドが別に入っているときだけ動きます。
+「eli5 で説明する」ボタンは、`eli5` スキル（claude-community marketplace の eli5 プラグイン）が別に入っているときだけ動きます。
 
 ## 入れ方
 
@@ -33,7 +34,8 @@ claude plugin install session-now@toka-lab
 
 | 項目 | 何をするか | 例 |
 |---|---|---|
-| `jiraUrl` | 文中の Jira キー（ABC-123）をこのサイトの課題へのリンクにする。空ならリンクにしない | `https://example.atlassian.net` |
+| `jiraUrl` | 文中の Jira キー（ABC-123）をこのサイトの課題へのリンクにする。本文に出たキーはリンク欄にも載る。空ならリンクにしない | `https://example.atlassian.net` |
+| `jiraProjects` | リンクにする Jira のプロジェクトキーをカンマ区切りで指定する。前後の空白は無視し、大文字小文字は区別する。空ならすべてのキーをリンクにする | `ABC,XYZ` |
 | `previewHostPattern` | preview 環境のホスト名に当てる正規表現。最初のキャプチャグループを PR 番号として `preview #番号` と出す。正規表現として正しくなければ無視する。空なら preview として扱わない | `^pr-(\d+)\.preview\.example\.com$` |
 
 ## 注意

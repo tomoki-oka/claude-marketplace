@@ -1,6 +1,6 @@
 import type { PrState } from '../types'
 
-const URL_RE = /https?:\/\/[^\s<>"'`()[\]{}、。「」（）]+/g
+export const URL_RE = /https?:\/\/[^\s<>"'`()[\]{}、。「」（）]+/g
 
 export const MAX_LINKS = 30
 
@@ -16,7 +16,7 @@ export function remember(links: readonly string[], found: readonly string[]): st
 
 export type Mark = { glyph: string; color?: string }
 
-type Service = { mark: Mark; match: (url: URL) => boolean; label: (url: URL) => string }
+type Service = { mark: Mark; match: (url: URL, jiraHost: string) => boolean; label: (url: URL) => string }
 
 const clip = (text: string, limit = 30) => (text.length > limit ? `${text.slice(0, limit - 1)}…` : text)
 
@@ -56,7 +56,8 @@ const SERVICES: Service[] = [
   {
     // Jira のロゴのひし形
     mark: { glyph: '◆', color: '#2684ff' },
-    match: url => isAtlassian(url) && /^\/browse\/[A-Z][A-Z0-9]+-\d+/.test(url.pathname),
+    match: (url, jiraHost) =>
+      (isAtlassian(url) || (jiraHost !== '' && url.host === jiraHost)) && /^\/browse\/[A-Z][A-Z0-9]+-\d+/.test(url.pathname),
     label: url => url.pathname.split('/')[2] ?? 'Jira',
   },
   {
@@ -96,7 +97,7 @@ const SERVICES: Service[] = [
 
 // どのサービスのリンクか（印）と、パネルに出す短い名前
 // preview は利用者が設定した正規表現に当たるホストで、最初のキャプチャを PR 番号として出す
-export function describe(href: string, preview: RegExp | null = null): { mark?: Mark; label: string } {
+export function describe(href: string, preview: RegExp | null = null, jiraUrl = ''): { mark?: Mark; label: string } {
   let url: URL
   try {
     url = new URL(href)
@@ -107,7 +108,8 @@ export function describe(href: string, preview: RegExp | null = null): { mark?: 
   if (previewMatch) {
     return { mark: { glyph: '◐', color: 'cyan' }, label: previewMatch[1] ? `preview #${previewMatch[1]}` : 'preview' }
   }
-  const service = SERVICES.find(s => s.match(url))
+  const jiraHost = URL.canParse(jiraUrl) ? new URL(jiraUrl).host : ''
+  const service = SERVICES.find(s => s.match(url, jiraHost))
   if (service) return { mark: service.mark, label: service.label(url) }
   const tail = url.pathname.split('/').filter(Boolean).pop() ?? ''
   return { label: clip(tail ? `${url.hostname}/…/${tail}` : url.hostname) }

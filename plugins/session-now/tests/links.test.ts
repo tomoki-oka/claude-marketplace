@@ -70,3 +70,10 @@ test('HTML の題名を 1 行に詰めて読み、無ければ空にする', asy
   expect(htmlTitle('<p>no title</p>')).toBe('')
   expect(htmlTitle(`<title>${'あ'.repeat(50)}</title>`)).toBe(`${'あ'.repeat(39)}…`)
 })
+
+test('jiraUrl のホストの /browse/KEY も Jira として扱い、別のホストは扱わない', async () => {
+  const href = 'https://jira.example.com/browse/ABC-1'
+  expect(describe(href, null, 'https://jira.example.com')).toEqual({ mark: { glyph: '◆', color: '#2684ff' }, label: 'ABC-1' })
+  expect(describe(href).mark).toBe(undefined)
+  expect(describe(href, null, 'https://other.example.com').mark).toBe(undefined)
+})

@@ -7,11 +7,18 @@ import {
   SYSTEM,
   addTask,
   buildPrompt,
+  decisionSections,
+  eli5Topic,
+  extractJiraLinks,
+  labelWidth,
   linkify,
   parseSummary,
   replaceTodos,
+  stepSections,
   syncTaskList,
+  taskSections,
   today,
+  turnLog,
   updateTask,
 } from './lib'
 import { PR_MARK, artifactId, compilePattern, describe, extractLinks, htmlTitle, isPullRequest, parsePrState, remember } from './links'
@@ -42,7 +49,7 @@ let lastPrompt = ''
 // PR 番号のリンク先。セッションの作業ディレクトリが GitHub のリポジトリでなければ空のまま
 let repoUrl = ''
 let isDraining = false
-const queue: { prompt: string; answer: string }[] = []
+const queue: { prompt: string; log: string; answer: string }[] = []
 
 async function storeKey($: EngineInterface) {
   return `session:${await $.session.id()}`
@@ -52,8 +59,8 @@ async function linksKey($: EngineInterface) {
   return `links:${await $.session.id()}`
 }
 
-async function collectLinks($: EngineInterface, text: string) {
-  const found = extractLinks(text)
+async function collectLinks($: EngineInterface, text: string, jiraUrl = '', jiraProjects = '') {
+  const found = [...extractLinks(text), ...extractJiraLinks(text, jiraUrl, jiraProjects)]
   if (found.length === 0) return
   const next = await update($, links, list => remember(list, found))
   // --resume で戻ったときに一覧を復元できるよう、セッション単位で残す
@@ -96,7 +103,7 @@ async function noteArtifact($: EngineInterface, args: Record<string, unknown>, r
   await $.store.set(TITLES_KEY, next)
 }
 
-async function summarize($: EngineInterface, prompt: string, answer: string) {
+async function summarize($: EngineInterface, prompt: string, log: string, answer: string) {
   const day = today(new Date())
   const m = await read($, meta)
   const calls = m.day === day ? m.calls : 0
@@ -109,8 +116,8 @@ async function summarize($: EngineInterface, prompt: string, answer: string) {
   const r = await $.model.complete({
     model: 'haiku',
     system: SYSTEM,
-    prompt: buildPrompt(await read($, summary), await read($, tasks), prompt, answer),
-    maxTokens: 1200,
+    prompt: buildPrompt(await read($, summary), await read($, tasks), prompt, log, answer),
+    maxTokens: 3000,
   })
   const spent = r.usage.input_tokens + r.usage.output_tokens
   const parsed = r.isAnswered ? parseSummary(r.text, Date.now()) : null
@@ -135,6 +142,7 @@ async function drain($: EngineInterface) {
       await summarize(
         $,
         batch.map(b => b.prompt).filter(Boolean).join('\n---\n'),
+        batch.map(b => b.log).filter(Boolean).join('\n---\n'),
         batch.map(b => b.answer).join('\n---\n'),
       )
     }
@@ -147,9 +155,11 @@ async function drain($: EngineInterface) {
 
 // 前回の要約を捨て、直近の会話から作り直す
 async function rebuild($: EngineInterface) {
-  const recent = (await $.session.messages()).filter(m => m.text.trim()).slice(-12)
+  const all = await $.session.messages()
+  const recent = all.filter(m => m.text.trim()).slice(-12)
   await update($, summary, () => null)
   queue.push({
+    log: turnLog(all.slice(-40)),
     prompt: recent.filter(m => m.role === 'user').map(m => m.text).join('\n---\n'),
     answer: recent.filter(m => m.role === 'assistant').map(m => m.text).join('\n---\n'),
   })
@@ -172,8 +182,22 @@ async function explain($: EngineInterface) {
   }
 }
 
+// 題材を渡して /eli5 を走らせる。eli5 は別のプラグインのスキル
+async function eli5($: EngineInterface, topic: string) {
+  if (!topic) {
+    await update($, meta, x => ({ ...x, error: '説明する内容がまだありません。ターンが 1 回終わると使えます' }))
+    return
+  }
+  try {
+    await $.command.run({ command: 'eli5', args: topic })
+  } catch (err) {
+    await update($, meta, x => ({ ...x, error: `eli5 を起動できません（${String(err).slice(0, 80)}）` }))
+  }
+}
+
 export const register: Register = (on, options) => {
   const jiraUrl = typeof options.jiraUrl === 'string' ? options.jiraUrl : ''
+  const jiraProjects = typeof options.jiraProjects === 'string' ? options.jiraProjects : ''
   const previewPattern = compilePattern(typeof options.previewHostPattern === 'string' ? options.previewHostPattern : '')
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'session-now', description: 'このセッションの状況パネルを開く' })
@@ -198,16 +222,16 @@ export const register: Register = (on, options) => {
 
   on('prompt.submit', async ($, e, next) => {
     lastPrompt = e.text
-    await collectLinks($, e.text)
+    await collectLinks($, e.text, jiraUrl, jiraProjects)
     return next(e)
   }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {
     if (!e.agentId && e.reason === 'answer') {
-      queue.push({ prompt: lastPrompt, answer: e.answer })
+      queue.push({ prompt: lastPrompt, log: turnLog(await $.session.messages().catch(() => [])), answer: e.answer })
       lastPrompt = ''
       void drain($)
-      await collectLinks($, e.answer)
+      await collectLinks($, e.answer, jiraUrl, jiraProjects)
       void refreshPrStates($)
     }
     return next(e)
@@ -241,7 +265,7 @@ export const register: Register = (on, options) => {
     const { Box, Button, Link, Text } = $.ui.resolve(e)
     // ボタンの文言の中にはリンクを置けないので、流れとタスクの名前はそのまま出す
     const rich = (text: string) =>
-      linkify(text, repoUrl, jiraUrl).map(seg => (seg.href ? <Link href={seg.href} label={seg.text} /> : seg.text))
+      linkify(text, repoUrl, jiraUrl, jiraProjects).map(seg => (seg.href ? <Link href={seg.href} label={seg.text} /> : seg.text))
     const s = await read($, summary)
     const list = await read($, tasks)
     const m = await read($, meta)
@@ -261,15 +285,15 @@ export const register: Register = (on, options) => {
       ? {
           title: step.text,
           meta: step.done ? '済み' : step === s?.flow[current] ? '今ここ' : 'この先',
-          body: step.detail || '詳細なし',
+          sections: stepSections(step.detail),
         }
       : decision
-        ? { title: decision.text, meta: '判断待ち', body: decision.detail || '詳細なし' }
+        ? { title: decision.text, meta: '判断待ち', sections: decisionSections(decision.detail) }
         : task
         ? {
             title: task.subject,
             meta: `${task.status === 'completed' ? '完了' : task.status === 'in_progress' ? '進行中' : '未着手'}${task.id.startsWith('todo:') ? '' : ` · #${task.id}`}`,
-            body: task.description || '説明なし',
+            sections: taskSections(task.description),
           }
         : undefined
     const rows = e.props.scroll.bodyRows
@@ -345,7 +369,7 @@ export const register: Register = (on, options) => {
             <Box flexDirection="column">
               <Text bold>リンク</Text>
               {shownLinks.map(href => {
-                const service = describe(href, previewPattern)
+                const service = describe(href, previewPattern, jiraUrl)
                 const prMark = states[href] && PR_MARK[states[href]]
                 const mark = prMark ?? service.mark
                 return (
@@ -404,7 +428,31 @@ export const register: Register = (on, options) => {
             <Text bold>{rich(picked.title)}</Text>
             <Text dimColor>{picked.meta}</Text>
             <Box flexGrow={1} overflow="hidden">
-              <Text wrap="wrap">{rich(picked.body)}</Text>
+              <Box flexDirection="column">
+                {picked.sections.length === 0 && <Text>詳細なし</Text>}
+                {picked.sections.map(x =>
+                  x.isList ? (
+                    <Box flexDirection="column">
+                      <Text bold>{x.label}</Text>
+                      {x.lines.map(line => (
+                        <Text wrap="wrap">
+                          {' ・'}
+                          {rich(line)}
+                        </Text>
+                      ))}
+                    </Box>
+                  ) : (
+                    <Box>
+                      {x.label && (
+                        <Box width={labelWidth(picked.sections)} flexShrink={0}>
+                          <Text bold>{x.label}</Text>
+                        </Box>
+                      )}
+                      <Text wrap="wrap">{rich(x.lines.join(' '))}</Text>
+                    </Box>
+                  ),
+                )}
+              </Box>
             </Box>
             <Button label="閉じる" onPress={() => update($, selected, () => '')} />
           </Box>
@@ -419,6 +467,7 @@ export const register: Register = (on, options) => {
           <Box gap={2}>
             <Button label="直近の会話から作り直す" onPress={() => rebuild($)} />
             <Button label="変更の図解を HTML で開く" onPress={() => explain($)} />
+            <Button label="eli5 で説明する" onPress={() => eli5($, eli5Topic(picked, s))} />
           </Box>
         </Box>
       </Box>
