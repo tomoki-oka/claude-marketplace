@@ -10,7 +10,6 @@ import {
   decisionSections,
   eli5Topic,
   extractJiraLinks,
-  labelWidth,
   linkify,
   parseSummary,
   replaceTodos,
@@ -428,30 +427,21 @@ export const register: Register = (on, options) => {
             <Text bold>{rich(picked.title)}</Text>
             <Text dimColor>{picked.meta}</Text>
             <Box flexGrow={1} overflow="hidden">
-              <Box flexDirection="column">
+              <Box flexDirection="column" gap={1}>
                 {picked.sections.length === 0 && <Text>詳細なし</Text>}
-                {picked.sections.map(x =>
-                  x.isList ? (
-                    <Box flexDirection="column">
-                      <Text bold>{x.label}</Text>
-                      {x.lines.map(line => (
-                        <Text wrap="wrap">
-                          {' ・'}
-                          {rich(line)}
-                        </Text>
-                      ))}
-                    </Box>
-                  ) : (
-                    <Box>
-                      {x.label && (
-                        <Box width={labelWidth(picked.sections)} flexShrink={0}>
-                          <Text bold>{x.label}</Text>
+                {picked.sections.map(x => (
+                  <Box flexDirection="column">
+                    {x.label && <Text bold>{x.label}</Text>}
+                    {x.lines.map(line => (
+                      <Box paddingLeft={x.label ? 1 : 0}>
+                        <Box width={2} flexShrink={0}>
+                          <Text>{x.isList ? '・' : ' '}</Text>
                         </Box>
-                      )}
-                      <Text wrap="wrap">{rich(x.lines.join(' '))}</Text>
-                    </Box>
-                  ),
-                )}
+                        <Text wrap="wrap">{rich(line)}</Text>
+                      </Box>
+                    ))}
+                  </Box>
+                ))}
               </Box>
             </Box>
             <Button label="閉じる" onPress={() => update($, selected, () => '')} />

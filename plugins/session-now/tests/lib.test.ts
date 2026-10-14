@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { SessionMessage } from 'claude-code'
 
-import { addTask, buildPrompt, decisionSections, eli5Topic, extractJiraLinks, labelWidth, linkify, parseSummary, replaceTodos, stepSections, syncTaskList, taskSections, turnLog, updateTask } from '../hooks/lib'
+import { addTask, buildPrompt, decisionSections, eli5Topic, extractJiraLinks, linkify, parseSummary, replaceTodos, stepSections, syncTaskList, taskSections, turnLog, updateTask } from '../hooks/lib'
 
 const noStep = { did: [], why: '', now: '', left: '' }
 const noDecision = { ask: '', options: [], recommend: '' }
@@ -60,13 +60,6 @@ test('判断待ちの欄は選択肢を「名前: 結果」の行にし、決め
     { label: '推奨', lines: ['A'], isList: false },
   ])
   expect(decisionSections(noDecision)).toEqual([])
-})
-
-test('横並びの見出しの幅は、一番長い見出しを全角 2 桁で数えて余白 2 を足す', async () => {
-  const sections = decisionSections({ ask: '決める', options: [{ name: 'A', result: '' }], recommend: 'A' })
-  expect(labelWidth(sections)).toBe(12)
-  expect(labelWidth(stepSections({ did: ['a'], why: '', now: 'x', left: '' }))).toBe(4)
-  expect(labelWidth(taskSections('説明'))).toBe(2)
 })
 
 test('タスクは見出し無しで説明 1 行、無ければ「説明なし」', async () => {

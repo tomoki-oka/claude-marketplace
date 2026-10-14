@@ -112,12 +112,6 @@ export function decisionSections(d: DecisionDetail): Section[] {
   return [...section('決めること', [d?.ask]), ...section('選択肢', options, true), ...section('推奨', [d?.recommend])]
 }
 
-const displayWidth = (text: string) => [...text].reduce((n, c) => n + (c.charCodeAt(0) < 128 ? 1 : 2), 0)
-
-// 横並びの見出しの幅。一番長い見出しに余白 2 を足す
-export const labelWidth = (sections: Section[]) =>
-  Math.max(0, ...sections.filter(x => !x.isList).map(x => displayWidth(x.label))) + 2
-
 export const taskSections = (description: string): Section[] => section('', [description || '説明なし'])
 
 export const sectionsText = (sections: Section[]) => sections.map(x => (x.label ? `${x.label}: ` : '') + x.lines.join(' / ')).join(' ')
