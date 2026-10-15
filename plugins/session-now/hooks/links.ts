@@ -50,7 +50,14 @@ const SERVICES: Service[] = [
     match: url => url.hostname === 'github.com',
     label: url => {
       const [, , repo, kind, num] = url.pathname.split('/')
-      return repo && num && (kind === 'pull' || kind === 'issues') ? `${repo}#${num}` : clip(url.pathname.slice(1))
+      if (!(repo && num && (kind === 'pull' || kind === 'issues'))) return clip(url.pathname.slice(1))
+      // 同じ PR の本体とコメントが並んでも見分けられるようにする
+      const anchor = /^#(discussion_r|issuecomment-)/.test(url.hash)
+        ? ' コメント'
+        : url.hash.startsWith('#pullrequestreview-')
+          ? ' レビュー'
+          : ''
+      return `${repo}#${num}${anchor}`
     },
   },
   {

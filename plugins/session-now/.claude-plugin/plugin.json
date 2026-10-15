@@ -1,6 +1,6 @@
 {
   "name": "session-now",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "このセッションの目的・流れ・判断待ち・タスクを右パネルに出し続ける",
   "types": "./types/index.d.ts",
   "author": { "name": "tomoki-oka" },
