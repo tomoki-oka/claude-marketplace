@@ -17,6 +17,7 @@ import {
   syncTaskList,
   taskSections,
   today,
+  turnLinks,
   turnLog,
   updateTask,
 } from './lib'
@@ -59,7 +60,10 @@ async function linksKey($: EngineInterface) {
 }
 
 async function collectLinks($: EngineInterface, text: string, jiraUrl = '', jiraProjects = '') {
-  const found = [...extractLinks(text), ...extractJiraLinks(text, jiraUrl, jiraProjects)]
+  await rememberLinks($, [...extractLinks(text), ...extractJiraLinks(text, jiraUrl, jiraProjects)])
+}
+
+async function rememberLinks($: EngineInterface, found: string[]) {
   if (found.length === 0) return
   const next = await update($, links, list => remember(list, found))
   // --resume で戻ったときに一覧を復元できるよう、セッション単位で残す
@@ -227,9 +231,11 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', async ($, e, next) => {
     if (!e.agentId && e.reason === 'answer') {
-      queue.push({ prompt: lastPrompt, log: turnLog(await $.session.messages().catch(() => [])), answer: e.answer })
+      const messages = await $.session.messages().catch(() => [])
+      queue.push({ prompt: lastPrompt, log: turnLog(messages), answer: e.answer })
       lastPrompt = ''
       void drain($)
+      await rememberLinks($, turnLinks(messages, jiraUrl, jiraProjects, previewPattern))
       await collectLinks($, e.answer, jiraUrl, jiraProjects)
       void refreshPrStates($)
     }

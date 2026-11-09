@@ -1,4 +1,4 @@
-import { URL_RE } from './links'
+import { URL_RE, describe, extractLinks } from './links'
 import type { SessionMessage } from 'claude-code'
 import type { DecisionDetail, NowDecision, NowStep, NowSummary, NowTask, StepDetail } from '../types'
 
@@ -77,10 +77,13 @@ const oneLine = (text: string, limit: number) => {
 }
 
 // 最後の人の発言より後の、アシスタントの途中の発言とツール呼び出しを 1 行ずつにする。最後の発言（ツール呼び出しを伴わない最終回答）は別に渡すので入れない
-export function turnLog(messages: readonly SessionMessage[]): string {
+function currentTurn(messages: readonly SessionMessage[]): readonly SessionMessage[] {
   const isHuman = (m: SessionMessage) => m.role === 'user' && m.text.trim() !== '' && !m.toolResults?.length
-  const from = messages.findLastIndex(isHuman) + 1
-  const turn = messages.slice(from)
+  return messages.slice(messages.findLastIndex(isHuman) + 1)
+}
+
+export function turnLog(messages: readonly SessionMessage[]): string {
+  const turn = currentTurn(messages)
   const finalIndex = turn.findLastIndex(m => m.role === 'assistant')
   const lines: string[] = []
   turn.forEach((m, i) => {
@@ -93,6 +96,34 @@ export function turnLog(messages: readonly SessionMessage[]): string {
     }
   })
   return lines.join('\n')
+}
+
+// ファイルの中身は以前からあるリンクで、このセッションで扱ったものではない
+const SKIP_RESULTS = new Set(['Read', 'Grep', 'Glob'])
+// ponytail: 結果は一覧（検索・PR 一覧など）だと数が多いので、1 件あたりの上限で抑える。足りなければ道具ごとに絞る
+const RESULT_LINKS = 3
+
+const strings = (v: unknown): string[] =>
+  typeof v === 'string' ? [v] : v && typeof v === 'object' ? Object.values(v).flatMap(strings) : []
+
+// 最後の人の発言より後の、発言・ツールの入力・ツールの結果に出たリンクを出た順に。結果からは印の付くサービスのものだけ
+export function turnLinks(messages: readonly SessionMessage[], jiraUrl = '', jiraProjects = '', preview: RegExp | null = null): string[] {
+  const all = (text: string) => [...extractLinks(text), ...extractJiraLinks(text, jiraUrl, jiraProjects)]
+  return currentTurn(messages).flatMap(m =>
+    m.role !== 'assistant'
+      ? []
+      : [
+          ...all(m.text),
+          ...m.toolUses.flatMap(u => [
+            ...strings(u.input).flatMap(all),
+            ...(SKIP_RESULTS.has(u.tool) || u.isError
+              ? []
+              : extractLinks(u.text ?? '')
+                  .filter(href => describe(href, preview, jiraUrl).mark)
+                  .slice(0, RESULT_LINKS)),
+          ]),
+        ],
+  )
 }
 
 export type Section = { label: string; lines: string[]; isList: boolean }

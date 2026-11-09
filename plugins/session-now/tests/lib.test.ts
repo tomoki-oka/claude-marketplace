@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { SessionMessage } from 'claude-code'
 
-import { addTask, buildPrompt, decisionSections, eli5Topic, extractJiraLinks, linkify, parseSummary, replaceTodos, stepSections, syncTaskList, taskSections, turnLog, updateTask } from '../hooks/lib'
+import { addTask, buildPrompt, decisionSections, eli5Topic, extractJiraLinks, linkify, parseSummary, replaceTodos, stepSections, syncTaskList, taskSections, turnLinks, turnLog, updateTask } from '../hooks/lib'
 
 const noStep = { did: [], why: '', now: '', left: '' }
 const noDecision = { ask: '', options: [], recommend: '' }
@@ -199,6 +199,33 @@ test('turnLog は最後の人の発言より後の途中発言とツール呼び
   expect(turnLog(messages)).toBe(
     ['[発言] 調べます', '[Read] file_path=/src/a.ts', '[Bash]（エラー） description=テスト command=pnpm test'].join('\n'),
   )
+})
+
+test('turnLinks は今回のターンの途中発言・ツールの入力・ツールの結果からリンクを出た順に拾う', async () => {
+  const pr = (n: number) => `https://github.com/o/r/pull/${n}`
+  const messages = [
+    msg('user', '前のターン https://old.example.com'),
+    msg('assistant', '前の回答 https://old2.example.com'),
+    msg('user', 'LPO-1 を見て'),
+    msg('assistant', 'LPO-2 を確かめます', {
+      toolUses: [
+        { tool_use_id: 'a', tool: 'mcp__jira__getJiraIssue', input: { issueIdOrKey: 'LPO-3' }, text: '{"self":"https://x.atlassian.net/rest/api/3/issue/1"}' },
+        { tool_use_id: 'b', tool: 'Bash', input: { command: 'gh pr create' }, text: `${pr(1)}\n${pr(2)}\n${pr(3)}\n${pr(4)}\nhttps://example.com/docs` },
+        { tool_use_id: 'c', tool: 'Read', input: { file_path: '/a.md' }, text: pr(5) },
+        { tool_use_id: 'd', tool: 'Bash', input: { command: 'x' }, text: pr(6), isError: true },
+        { tool_use_id: 'e', tool: 'WebFetch', input: { url: 'https://example.com/page' } },
+      ],
+    }),
+    msg('assistant', '作りました'),
+  ]
+  expect(turnLinks(messages, 'https://x.atlassian.net', 'LPO')).toEqual([
+    'https://x.atlassian.net/browse/LPO-2',
+    'https://x.atlassian.net/browse/LPO-3',
+    pr(1),
+    pr(2),
+    pr(3),
+    'https://example.com/page',
+  ])
 })
 
 test('turnLog はツール入力を 120 文字で切る', async () => {
