@@ -37,13 +37,19 @@ const meta = atom({ plugin: 'session-now', key: 'meta' } as const, {
 // null は「今の段階の詳細を開く」。人が選ぶか閉じると文字列になり、今の段階が進むと null に戻す
 const selected = atom({ plugin: 'session-now', key: 'selected' } as const, null as string | null)
 const links = atom({ plugin: 'session-now', key: 'links' } as const, [] as string[])
+const showAllLinks = atom({ plugin: 'session-now', key: 'showAllLinks' } as const, false as boolean)
 const prStates = atom({ plugin: 'session-now', key: 'prStates' } as const, {} as Record<string, PrState>)
 // artifact の id から題名。セッションをまたいで使うので store には 1 つのキーで残す
 const artifactTitles = atom({ plugin: 'session-now', key: 'artifactTitles' } as const, {} as Record<string, string>)
 const TITLES_KEY = 'artifact-titles'
 
-// パネルに出すリンクの件数。古いものは store に残るが出さない
+// 畳んでいるときに出すリンクの件数。広げると store に残っている分（MAX_LINKS 件まで）を全部出す
 const LINKS_SHOWN = 6
+
+async function visibleLinks($: EngineInterface) {
+  const all = await read($, links)
+  return (await read($, showAllLinks)) ? all : all.slice(0, LINKS_SHOWN)
+}
 
 let lastPrompt = ''
 // PR 番号のリンク先。セッションの作業ディレクトリが GitHub のリポジトリでなければ空のまま
@@ -74,9 +80,7 @@ async function rememberLinks($: EngineInterface, found: string[]) {
 // ponytail: ターンごとに未マージの PR の数だけ gh を呼ぶ。重くなったら間隔を空ける
 async function refreshPrStates($: EngineInterface) {
   const known = await read($, prStates)
-  const targets = (await read($, links))
-    .slice(0, LINKS_SHOWN)
-    .filter(href => isPullRequest(href) && known[href] !== 'merged')
+  const targets = (await visibleLinks($)).filter(href => isPullRequest(href) && known[href] !== 'merged')
   const found = await Promise.all(
     targets.map(async href => {
       const r = await $.process
@@ -275,7 +279,9 @@ export const register: Register = (on, options) => {
     const list = await read($, tasks)
     const m = await read($, meta)
     const agents = (await $.agent.list()).filter(a => a.status === 'running' || a.status === 'pending')
-    const shownLinks = (await read($, links)).slice(0, LINKS_SHOWN)
+    const allLinks = await read($, links)
+    const isAllShown = await read($, showAllLinks)
+    const shownLinks = await visibleLinks($)
     const states = await read($, prStates)
     const titles = await read($, artifactTitles)
     const current = s ? s.flow.findIndex(step => !step.done) : -1
@@ -372,7 +378,22 @@ export const register: Register = (on, options) => {
 
           {shownLinks.length > 0 && (
             <Box flexDirection="column">
-              <Text bold>リンク</Text>
+              <Box gap={1}>
+                <Box flexShrink={0}>
+                  <Text bold>リンク</Text>
+                </Box>
+                {allLinks.length > LINKS_SHOWN && (
+                  <Button
+                    plain
+                    dimColor
+                    label={isAllShown ? `${LINKS_SHOWN} 件に戻す` : `全 ${allLinks.length} 件`}
+                    onPress={async () => {
+                      await update($, showAllLinks, v => !v)
+                      void refreshPrStates($)
+                    }}
+                  />
+                )}
+              </Box>
               {shownLinks.map(href => {
                 const service = describe(href, previewPattern, jiraUrl)
                 const prMark = states[href] && PR_MARK[states[href]]
