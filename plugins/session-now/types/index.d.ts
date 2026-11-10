@@ -16,6 +16,7 @@ export type NowSummary = {
   next: string
   at: number
 }
+export type NowMode = 'full' | 'links'
 export type PrState = 'open' | 'draft' | 'merged' | 'closed'
 export type NowMeta = { isBusy: boolean; error: string; day: string; calls: number; tokens: number }
 
@@ -27,6 +28,7 @@ declare module 'claude-code' {
       meta: NowMeta
       selected: string | null
       links: string[]
+      mode: NowMode
       prStates: Record<string, PrState>
       artifactTitles: Record<string, string>
     }

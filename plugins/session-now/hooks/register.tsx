@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { NowMeta, NowSummary, NowTask, PrState } from '../types'
+import type { NowMeta, NowMode, NowSummary, NowTask, PrState } from '../types'
 import {
   DAILY_MAX_CALLS,
   SYSTEM,
@@ -21,10 +21,16 @@ import {
   turnLog,
   updateTask,
 } from './lib'
-import { PR_MARK, artifactId, compilePattern, describe, extractLinks, htmlTitle, isPullRequest, parsePrState, remember } from './links'
+import { MAX_LINKS, PR_MARK, artifactId, compilePattern, describe, extractLinks, htmlTitle, isPullRequest, parsePrState, remember } from './links'
 
 const PANE = 'session-now'
 const TITLE = 'いまの状況'
+// links はリンクだけを集めて出し、Haiku の要約を呼ばない。セッションをまたいで store に残す
+const mode = atom({ plugin: 'session-now', key: 'mode' } as const, 'full' as NowMode)
+const MODE_KEY = 'mode'
+// 人が閉じたら、次のセッションでも自動では開かない
+const HIDDEN_KEY = 'hidden'
+const titleOf = (m: NowMode) => (m === 'links' ? 'リンク' : TITLE)
 const tasks = atom({ plugin: 'session-now', key: 'tasks' } as const, [] as NowTask[])
 const summary = atom({ plugin: 'session-now', key: 'summary' } as const, null as NowSummary | null)
 const meta = atom({ plugin: 'session-now', key: 'meta' } as const, {
@@ -74,8 +80,9 @@ async function rememberLinks($: EngineInterface, found: string[]) {
 // ponytail: ターンごとに未マージの PR の数だけ gh を呼ぶ。重くなったら間隔を空ける
 async function refreshPrStates($: EngineInterface) {
   const known = await read($, prStates)
+  const shown = (await read($, mode)) === 'links' ? MAX_LINKS : LINKS_SHOWN
   const targets = (await read($, links))
-    .slice(0, LINKS_SHOWN)
+    .slice(0, shown)
     .filter(href => isPullRequest(href) && known[href] !== 'merged')
   const found = await Promise.all(
     targets.map(async href => {
@@ -169,6 +176,18 @@ async function rebuild($: EngineInterface) {
   await drain($)
 }
 
+async function showPane($: EngineInterface) {
+  await $.store.set(HIDDEN_KEY, false)
+  await $.ui.open({ id: PANE, title: titleOf(await read($, mode)) })
+}
+
+async function setMode($: EngineInterface, next: NowMode) {
+  await update($, mode, () => next)
+  await $.store.set(MODE_KEY, next)
+  await showPane($)
+  void refreshPrStates($)
+}
+
 async function loadRepoUrl($: EngineInterface) {
   const r = await $.process.run(['gh', 'repo', 'view', '--json', 'url', '-q', '.url']).catch(() => null)
   if (r?.exitCode !== 0) return
@@ -203,7 +222,13 @@ export const register: Register = (on, options) => {
   const jiraProjects = typeof options.jiraProjects === 'string' ? options.jiraProjects : ''
   const previewPattern = compilePattern(typeof options.previewHostPattern === 'string' ? options.previewHostPattern : '')
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'session-now', description: 'このセッションの状況パネルを開く' })
+    await $.command.register({
+      name: 'session-now',
+      description: '状況パネルの表示を切り替える。links でリンクだけ、full で全部を出す',
+      argumentHint: '[links|full]',
+    })
+    const savedMode = await $.store.get(MODE_KEY)
+    if (savedMode === 'links' || savedMode === 'full') await update($, mode, () => savedMode)
     const saved = await $.store.get(await storeKey($))
     if (saved && typeof saved === 'object') await update($, summary, s => s ?? (saved as NowSummary))
     const savedLinks = await $.store.get(await linksKey($))
@@ -213,14 +238,29 @@ export const register: Register = (on, options) => {
       await update($, artifactTitles, t => ({ ...(savedTitles as Record<string, string>), ...t }))
     }
     void refreshPrStates($)
-    void $.ui.open({ id: PANE, title: TITLE })
+    if ((await $.store.get(HIDDEN_KEY)) !== true) void $.ui.open({ id: PANE, title: titleOf(await read($, mode)) })
     void loadRepoUrl($)
     return next(e)
   })
 
-  on('command.run', { command: 'session-now' }, async $ => {
-    await $.ui.open({ id: PANE, title: TITLE })
+  on('command.run', { command: 'session-now' }, async ($, e) => {
+    const arg = e.args.trim()
+    if (arg === 'links' || arg === 'full') {
+      await setMode($, arg)
+      return { text: arg === 'links' ? 'リンクだけを出すモードにしました。' : '全部を出すモードにしました。' }
+    }
+    if (arg) return { text: '引数は links か full です。' }
+    if ((await $.ui.panes()).some(pane => pane.id === PANE)) {
+      await $.ui.close({ id: PANE })
+      return { text: '状況パネルを閉じました。' }
+    }
+    await showPane($)
     return { text: '状況パネルを開きました。' }
+  })
+
+  on('ui.close', async ($, e, next) => {
+    if (e.id === PANE && e.origin.kind !== 'unload') await $.store.set(HIDDEN_KEY, true)
+    return next(e)
   })
 
   on('prompt.submit', async ($, e, next) => {
@@ -232,9 +272,11 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     if (!e.agentId && e.reason === 'answer') {
       const messages = await $.session.messages().catch(() => [])
-      queue.push({ prompt: lastPrompt, log: turnLog(messages), answer: e.answer })
+      if ((await read($, mode)) === 'full') {
+        queue.push({ prompt: lastPrompt, log: turnLog(messages), answer: e.answer })
+        void drain($)
+      }
       lastPrompt = ''
-      void drain($)
       await rememberLinks($, turnLinks(messages, jiraUrl, jiraProjects, previewPattern))
       await collectLinks($, e.answer, jiraUrl, jiraProjects)
       void refreshPrStates($)
@@ -275,7 +317,8 @@ export const register: Register = (on, options) => {
     const list = await read($, tasks)
     const m = await read($, meta)
     const agents = (await $.agent.list()).filter(a => a.status === 'running' || a.status === 'pending')
-    const shownLinks = (await read($, links)).slice(0, LINKS_SHOWN)
+    const currentMode = await read($, mode)
+    const shownLinks = (await read($, links)).slice(0, currentMode === 'links' ? MAX_LINKS : LINKS_SHOWN)
     const states = await read($, prStates)
     const titles = await read($, artifactTitles)
     const current = s ? s.flow.findIndex(step => !step.done) : -1
@@ -302,6 +345,45 @@ export const register: Register = (on, options) => {
           }
         : undefined
     const rows = e.props.scroll.bodyRows
+    const linkList = (
+      <Box flexDirection="column">
+        <Text bold>リンク</Text>
+        {shownLinks.map(href => {
+          const service = describe(href, previewPattern, jiraUrl)
+          const prMark = states[href] && PR_MARK[states[href]]
+          const mark = prMark ?? service.mark
+          return (
+            <Text>
+              {mark ? (
+                <Text color={mark.color}>
+                  {` ${mark.glyph} `}
+                </Text>
+              ) : (
+                ' · '
+              )}
+              <Link href={href} label={titles[artifactId(href) ?? ''] ?? service.label} />
+            </Text>
+          )
+        })}
+      </Box>
+    )
+    const modeButton = (
+      <Button
+        label={currentMode === 'links' ? '全部を出す' : 'リンクだけにする'}
+        onPress={() => setMode($, currentMode === 'links' ? 'full' : 'links')}
+      />
+    )
+
+    if (currentMode === 'links') {
+      return (
+        <Box flexDirection="column" height={rows}>
+          <Box flexDirection="column" flexGrow={1} overflow="hidden">
+            {shownLinks.length > 0 ? linkList : <Text dimColor>会話にリンクが出ると、ここに並びます。</Text>}
+          </Box>
+          <Box flexShrink={0}>{modeButton}</Box>
+        </Box>
+      )
+    }
 
     // 外枠をパネルの高さに固定し、ボタン行を常に最下段に置く。溢れた内容は下から切る
     return (
@@ -370,28 +452,7 @@ export const register: Register = (on, options) => {
             </Text>
           )}
 
-          {shownLinks.length > 0 && (
-            <Box flexDirection="column">
-              <Text bold>リンク</Text>
-              {shownLinks.map(href => {
-                const service = describe(href, previewPattern, jiraUrl)
-                const prMark = states[href] && PR_MARK[states[href]]
-                const mark = prMark ?? service.mark
-                return (
-                  <Text>
-                    {mark ? (
-                      <Text color={mark.color}>
-                        {` ${mark.glyph} `}
-                      </Text>
-                    ) : (
-                      ' · '
-                    )}
-                    <Link href={href} label={titles[artifactId(href) ?? ''] ?? service.label} />
-                  </Text>
-                )
-              })}
-            </Box>
-          )}
+          {shownLinks.length > 0 && linkList}
 
           {list.length > 0 && (
             <Box flexDirection="column">
@@ -464,6 +525,7 @@ export const register: Register = (on, options) => {
             <Button label="直近の会話から作り直す" onPress={() => rebuild($)} />
             <Button label="変更の図解を HTML で開く" onPress={() => explain($)} />
             <Button label="eli5 で説明する" onPress={() => eli5($, eli5Topic(picked, s))} />
+            {modeButton}
           </Box>
         </Box>
       </Box>

@@ -26,7 +26,17 @@ claude plugin marketplace add tomoki-oka/claude-marketplace
 claude plugin install session-now@toka-lab
 ```
 
-3. 起動するとパネルが自動で開く。閉じたあとは `/session-now` で開き直せる
+3. 起動するとパネルが自動で開く
+
+## 使い方
+
+| コマンド | 何をするか |
+|---|---|
+| `/session-now` | パネルを開く・閉じる。閉じたままにすると、次の起動でも自動では開かない |
+| `/session-now links` | リンクだけを集めて出すモードにする。要約しないので Haiku を呼ばない |
+| `/session-now full` | 目的・流れ・タスクなども出す、もとのモードに戻す |
+
+モードはパネル下のボタンでも切り替えられる。選んだモードは次の起動にも引き継ぐ。
 
 ## 設定
 
