@@ -27,7 +27,6 @@ declare module 'claude-code' {
       meta: NowMeta
       selected: string | null
       links: string[]
-      showAllLinks: boolean
       prStates: Record<string, PrState>
       artifactTitles: Record<string, string>
     }
