@@ -104,8 +104,16 @@ const SERVICES: Service[] = [
 
 const hostOf = (jiraUrl: string) => (URL.canParse(jiraUrl) ? new URL(jiraUrl).host : '')
 
-// サービスごとにまとめる。順は SERVICES の並びで、preview はその後、知らないサービスは最後。同じサービスの中は元の順（新しい順）を保つ
-export function sortByService(hrefs: readonly string[], preview: RegExp | null = null, jiraUrl = ''): string[] {
+const byName = new Intl.Collator('ja', { numeric: true }).compare
+
+// サービスごとにまとめる。順は SERVICES の並びで、preview はその後、知らないサービスは最後
+// 同じサービスの中は表示名の昇順で、番号は数として比べる（#9 が #10 より先）。名前が同じなら元の順（新しい順）を保つ
+export function sortByService(
+  hrefs: readonly string[],
+  labelOf: (href: string) => string,
+  preview: RegExp | null = null,
+  jiraUrl = '',
+): string[] {
   const jiraHost = hostOf(jiraUrl)
   const rank = (href: string) => {
     if (!URL.canParse(href)) return SERVICES.length + 1
@@ -115,9 +123,9 @@ export function sortByService(hrefs: readonly string[], preview: RegExp | null =
     return i < 0 ? SERVICES.length + 1 : i
   }
   return hrefs
-    .map(href => [href, rank(href)] as const)
-    .sort((a, b) => a[1] - b[1])
-    .map(([href]) => href)
+    .map(href => ({ href, rank: rank(href), label: labelOf(href) }))
+    .sort((a, b) => a.rank - b.rank || byName(a.label, b.label))
+    .map(x => x.href)
 }
 
 // どのサービスのリンクか（印）と、パネルに出す短い名前

@@ -81,27 +81,31 @@ test('jiraUrl のホストの /browse/KEY も Jira として扱い、別のホ�
   expect(describe(href, null, 'https://other.example.com').mark).toBe(undefined)
 })
 
-test('サービスごとにまとめ、同じサービスの中は新しい順を保ち、知らないサービスは最後に置く', async () => {
+test('サービスごとにまとめ、同じサービスの中は表示名の昇順で番号を数として比べ、知らないサービスは最後に置く', async () => {
   const preview = compilePattern('^pr-(\\d+)\\.preview\\.example\\.dev$')
+  const label = (href: string) => describe(href, preview).label
   expect(
     sortByService(
       [
         'https://example.com/a',
-        'https://example.atlassian.net/browse/ABC-2',
+        'https://example.atlassian.net/browse/ABC-10',
         'https://pr-1.preview.example.dev/',
-        'https://github.com/o/r/pull/2',
-        'https://example.atlassian.net/browse/ABC-1',
-        'https://github.com/o/r/pull/1',
+        'https://github.com/o/r/pull/10',
+        'https://example.atlassian.net/browse/ABC-9',
+        'https://github.com/o/r/pull/9',
+        'https://github.com/o/r/pull/9#discussion_r1',
         'https://claude.ai/code/artifact/5b7e2d40-bbbb',
       ],
+      label,
       preview,
     ),
   ).toEqual([
     'https://claude.ai/code/artifact/5b7e2d40-bbbb',
-    'https://github.com/o/r/pull/2',
-    'https://github.com/o/r/pull/1',
-    'https://example.atlassian.net/browse/ABC-2',
-    'https://example.atlassian.net/browse/ABC-1',
+    'https://github.com/o/r/pull/9',
+    'https://github.com/o/r/pull/9#discussion_r1',
+    'https://github.com/o/r/pull/10',
+    'https://example.atlassian.net/browse/ABC-9',
+    'https://example.atlassian.net/browse/ABC-10',
     'https://pr-1.preview.example.dev/',
     'https://example.com/a',
   ])

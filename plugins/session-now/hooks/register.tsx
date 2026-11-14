@@ -348,7 +348,7 @@ export const register: Register = (on, options) => {
     const labelOf = (href: string) => titles[artifactId(href) ?? ''] ?? describe(href, previewPattern, jiraUrl).label
     const shownLinks =
       currentMode === 'links'
-        ? sortByService(allLinks.slice(0, MAX_LINKS), previewPattern, jiraUrl).filter(
+        ? sortByService(allLinks.slice(0, MAX_LINKS), labelOf, previewPattern, jiraUrl).filter(
             href => !q || `${labelOf(href)} ${href}`.toLowerCase().includes(q),
           )
         : allLinks.slice(0, LINKS_SHOWN)
