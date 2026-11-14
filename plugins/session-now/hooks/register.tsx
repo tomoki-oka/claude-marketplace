@@ -31,6 +31,13 @@ const MODE_KEY = 'mode'
 // 人が閉じたら、次のセッションでも自動では開かない
 const HIDDEN_KEY = 'hidden'
 const titleOf = (m: NowMode) => (m === 'links' ? 'リンク' : TITLE)
+const HELP_ARGS = new Set(['h', 'help', '-h', '--help'])
+const HELP = [
+  '/session-now          パネルを開く・閉じる（このヘルプも出す）',
+  '/session-now links    リンクだけを出すモードにする。Haiku を呼ばない',
+  '/session-now full     目的・流れ・タスクなども出すモードにする',
+  '/session-now h        このヘルプを出す（help, -h, --help も可）',
+].join('\n')
 const tasks = atom({ plugin: 'session-now', key: 'tasks' } as const, [] as NowTask[])
 const summary = atom({ plugin: 'session-now', key: 'summary' } as const, null as NowSummary | null)
 const meta = atom({ plugin: 'session-now', key: 'meta' } as const, {
@@ -225,7 +232,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'session-now',
       description: '状況パネルの表示を切り替える。links でリンクだけ、full で全部を出す',
-      argumentHint: '[links|full]',
+      argumentHint: '[links|full|h]',
     })
     const savedMode = await $.store.get(MODE_KEY)
     if (savedMode === 'links' || savedMode === 'full') await update($, mode, () => savedMode)
@@ -249,13 +256,14 @@ export const register: Register = (on, options) => {
       await setMode($, arg)
       return { text: arg === 'links' ? 'リンクだけを出すモードにしました。' : '全部を出すモードにしました。' }
     }
-    if (arg) return { text: '引数は links か full です。' }
+    if (HELP_ARGS.has(arg)) return { text: HELP }
+    if (arg) return { text: `引数 ${arg} は使えません。\n\n${HELP}` }
     if ((await $.ui.panes()).some(pane => pane.id === PANE)) {
       await $.ui.close({ id: PANE })
-      return { text: '状況パネルを閉じました。' }
+      return { text: `状況パネルを閉じました。\n\n${HELP}` }
     }
     await showPane($)
-    return { text: '状況パネルを開きました。' }
+    return { text: `状況パネルを開きました。\n\n${HELP}` }
   })
 
   on('ui.close', async ($, e, next) => {
