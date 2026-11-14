@@ -25,6 +25,7 @@ test('よく使うサービスは印と短い名前を付け、知らないサ�
     ['https://github.com/o/r/issues/12#issuecomment-3', '⊙', 'r#12 コメント'],
     ['https://github.com/o/r/pull/212#pullrequestreview-5', '⊙', 'r#212 レビュー'],
     ['https://example.atlassian.net/browse/ABC-1113', '◆', 'ABC-1113'],
+    ['https://example.atlassian.net/browse/ABC-1113?focusedCommentId=549037', '◆', 'ABC-1113 コメント'],
     ['https://example.atlassian.net/wiki/spaces/DOC/pages/123456/Editor+%E4%BB%95%E6%A7%98', '≋', 'Editor 仕様'],
     ['https://example.atlassian.net/wiki/x/AbCd', '≋', 'Confluence'],
     ['https://example.slack.com/archives/C0123/p1700000000000100', '#', 'Slack スレッド'],

@@ -65,7 +65,8 @@ const SERVICES: Service[] = [
     mark: { glyph: '◆', color: '#2684ff' },
     match: (url, jiraHost) =>
       (isAtlassian(url) || (jiraHost !== '' && url.host === jiraHost)) && /^\/browse\/[A-Z][A-Z0-9]+-\d+/.test(url.pathname),
-    label: url => url.pathname.split('/')[2] ?? 'Jira',
+    // 課題の本体とコメントが並んでも見分けられるようにする
+    label: url => `${url.pathname.split('/')[2] ?? 'Jira'}${url.searchParams.has('focusedCommentId') ? ' コメント' : ''}`,
   },
   {
     // Confluence のロゴの波
