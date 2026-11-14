@@ -53,7 +53,7 @@ const SERVICES: Service[] = [
       if (!(repo && num && (kind === 'pull' || kind === 'issues'))) return clip(url.pathname.slice(1))
       // 同じ PR の本体とコメントが並んでも見分けられるようにする
       const anchor = /^#(discussion_r|issuecomment-)/.test(url.hash)
-        ? ' コメント'
+        ? ' 💬'
         : url.hash.startsWith('#pullrequestreview-')
           ? ' レビュー'
           : ''
@@ -66,7 +66,7 @@ const SERVICES: Service[] = [
     match: (url, jiraHost) =>
       (isAtlassian(url) || (jiraHost !== '' && url.host === jiraHost)) && /^\/browse\/[A-Z][A-Z0-9]+-\d+/.test(url.pathname),
     // 課題の本体とコメントが並んでも見分けられるようにする
-    label: url => `${url.pathname.split('/')[2] ?? 'Jira'}${url.searchParams.has('focusedCommentId') ? ' コメント' : ''}`,
+    label: url => `${url.pathname.split('/')[2] ?? 'Jira'}${url.searchParams.has('focusedCommentId') ? ' 💬' : ''}`,
   },
   {
     // Confluence のロゴの波
