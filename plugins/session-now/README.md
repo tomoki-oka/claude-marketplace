@@ -33,7 +33,7 @@ claude plugin install session-now@toka-lab
 | コマンド | 何をするか |
 |---|---|
 | `/session-now` | パネルを開く・閉じる。閉じたままにすると、次の起動でも自動では開かない。使い方の一覧も出す |
-| `/session-now links` | リンクだけを集めて出すモードにする。要約しないので Haiku を呼ばない |
+| `/session-now links` | リンクだけを集めて出すモードにする。要約しないので Haiku を呼ばない。リンクはサービスごとにまとめて並べ、上の検索欄で名前か URL の一部から絞り込める |
 | `/session-now full` | 目的・流れ・タスクなども出す、もとのモードに戻す |
 | `/session-now h` | 使い方の一覧を出す。`help`・`-h`・`--help` でも同じ |
 

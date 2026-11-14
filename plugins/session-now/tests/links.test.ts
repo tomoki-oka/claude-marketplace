@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { artifactId, compilePattern, describe, extractLinks, htmlTitle, isPullRequest, parsePrState, remember } from '../hooks/links'
+import { artifactId, compilePattern, describe, extractLinks, htmlTitle, isPullRequest, parsePrState, remember, sortByService } from '../hooks/links'
 
 test('文末の句読点と markdown の括弧を URL に含めない', async () => {
   expect(
@@ -79,4 +79,30 @@ test('jiraUrl のホストの /browse/KEY も Jira として扱い、別のホ�
   expect(describe(href, null, 'https://jira.example.com')).toEqual({ mark: { glyph: '◆', color: '#2684ff' }, label: 'ABC-1' })
   expect(describe(href).mark).toBe(undefined)
   expect(describe(href, null, 'https://other.example.com').mark).toBe(undefined)
+})
+
+test('サービスごとにまとめ、同じサービスの中は新しい順を保ち、知らないサービスは最後に置く', async () => {
+  const preview = compilePattern('^pr-(\\d+)\\.preview\\.example\\.dev$')
+  expect(
+    sortByService(
+      [
+        'https://example.com/a',
+        'https://example.atlassian.net/browse/ABC-2',
+        'https://pr-1.preview.example.dev/',
+        'https://github.com/o/r/pull/2',
+        'https://example.atlassian.net/browse/ABC-1',
+        'https://github.com/o/r/pull/1',
+        'https://claude.ai/code/artifact/5b7e2d40-bbbb',
+      ],
+      preview,
+    ),
+  ).toEqual([
+    'https://claude.ai/code/artifact/5b7e2d40-bbbb',
+    'https://github.com/o/r/pull/2',
+    'https://github.com/o/r/pull/1',
+    'https://example.atlassian.net/browse/ABC-2',
+    'https://example.atlassian.net/browse/ABC-1',
+    'https://pr-1.preview.example.dev/',
+    'https://example.com/a',
+  ])
 })

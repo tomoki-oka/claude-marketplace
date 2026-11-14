@@ -21,7 +21,19 @@ import {
   turnLog,
   updateTask,
 } from './lib'
-import { MAX_LINKS, PR_MARK, artifactId, compilePattern, describe, extractLinks, htmlTitle, isPullRequest, parsePrState, remember } from './links'
+import {
+  MAX_LINKS,
+  PR_MARK,
+  artifactId,
+  compilePattern,
+  describe,
+  extractLinks,
+  htmlTitle,
+  isPullRequest,
+  parsePrState,
+  remember,
+  sortByService,
+} from './links'
 
 const PANE = 'session-now'
 const TITLE = 'いまの状況'
@@ -50,6 +62,8 @@ const meta = atom({ plugin: 'session-now', key: 'meta' } as const, {
 // null は「今の段階の詳細を開く」。人が選ぶか閉じると文字列になり、今の段階が進むと null に戻す
 const selected = atom({ plugin: 'session-now', key: 'selected' } as const, null as string | null)
 const links = atom({ plugin: 'session-now', key: 'links' } as const, [] as string[])
+// links モードの検索欄の文字列
+const query = atom({ plugin: 'session-now', key: 'query' } as const, '')
 const prStates = atom({ plugin: 'session-now', key: 'prStates' } as const, {} as Record<string, PrState>)
 // artifact の id から題名。セッションをまたいで使うので store には 1 つのキーで残す
 const artifactTitles = atom({ plugin: 'session-now', key: 'artifactTitles' } as const, {} as Record<string, string>)
@@ -317,7 +331,7 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Button, Link, Text } = $.ui.resolve(e)
+    const { Box, Button, Input, Link, Text } = $.ui.resolve(e)
     // ボタンの文言の中にはリンクを置けないので、流れとタスクの名前はそのまま出す
     const rich = (text: string) =>
       linkify(text, repoUrl, jiraUrl, jiraProjects).map(seg => (seg.href ? <Link href={seg.href} label={seg.text} /> : seg.text))
@@ -326,9 +340,18 @@ export const register: Register = (on, options) => {
     const m = await read($, meta)
     const agents = (await $.agent.list()).filter(a => a.status === 'running' || a.status === 'pending')
     const currentMode = await read($, mode)
-    const shownLinks = (await read($, links)).slice(0, currentMode === 'links' ? MAX_LINKS : LINKS_SHOWN)
     const states = await read($, prStates)
     const titles = await read($, artifactTitles)
+    const allLinks = await read($, links)
+    const typed = await read($, query)
+    const q = typed.trim().toLowerCase()
+    const labelOf = (href: string) => titles[artifactId(href) ?? ''] ?? describe(href, previewPattern, jiraUrl).label
+    const shownLinks =
+      currentMode === 'links'
+        ? sortByService(allLinks.slice(0, MAX_LINKS), previewPattern, jiraUrl).filter(
+            href => !q || `${labelOf(href)} ${href}`.toLowerCase().includes(q),
+          )
+        : allLinks.slice(0, LINKS_SHOWN)
     const current = s ? s.flow.findIndex(step => !step.done) : -1
     const done = list.filter(t => t.status === 'completed').length
     // 流れと判断待ちは要約し直すと順番が変わるので、文面で選択を覚える
@@ -369,7 +392,7 @@ export const register: Register = (on, options) => {
               ) : (
                 ' · '
               )}
-              <Link href={href} label={titles[artifactId(href) ?? ''] ?? service.label} />
+              <Link href={href} label={labelOf(href)} />
             </Text>
           )
         })}
@@ -383,10 +406,22 @@ export const register: Register = (on, options) => {
     )
 
     if (currentMode === 'links') {
+      const setQuery = (value: string) => void update($, query, () => value)
       return (
         <Box flexDirection="column" height={rows}>
+          {allLinks.length > 0 && (
+            <Box flexShrink={0}>
+              <Input key="link-search" label="検索 " placeholder="名前か URL の一部" value={typed} onInput={setQuery} onSubmit={setQuery} />
+            </Box>
+          )}
           <Box flexDirection="column" flexGrow={1} overflow="hidden">
-            {shownLinks.length > 0 ? linkList : <Text dimColor>会話にリンクが出ると、ここに並びます。</Text>}
+            {shownLinks.length > 0 ? (
+              linkList
+            ) : allLinks.length > 0 ? (
+              <Text dimColor>当てはまるリンクはありません。</Text>
+            ) : (
+              <Text dimColor>会話にリンクが出ると、ここに並びます。</Text>
+            )}
           </Box>
           <Box flexShrink={0}>{modeButton}</Box>
         </Box>
